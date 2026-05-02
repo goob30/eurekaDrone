@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D.E.A.T.H. - Drone Control Interface</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0e27;
+            color: #e0e0e0;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 280px 1fr 350px;
+            grid-template-rows: 60px 1fr;
+            height: 100vh;
+            gap: 0;
+        }
+
+        /* Header */
+        .header {
+            grid-column: 1 / -1;
+            background: linear-gradient(135deg, #1a1f3a 0%, #0f1228 100%);
+            border-bottom: 2px solid #2a3f5f;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 30px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            letter-spacing: 3px;
+            color: #4a9eff;
+            text-transform: uppercase;
+        }
+
+        .header-status {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #a0a0a0;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #4ade80;
+            box-shadow: 0 0 10px #4ade80;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Left Sidebar - Status & Mode */
+        .left-sidebar {
+            background: #151933;
+            border-right: 1px solid #2a3f5f;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .panel {
+            padding: 20px;
+            border-bottom: 1px solid #2a3f5f;
+        }
+
+        .panel-title {
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #6b7280;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .panel-title::before {
+            content: '';
+            width: 3px;
+            height: 14px;
+            background: #4a9eff;
+            border-radius: 2px;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            font-size: 13px;
+            border-bottom: 1px solid #1f2437;
+        }
+
+        .status-item:last-child {
+            border-bottom: none;
+        }
+
+        .status-label {
+            color: #9ca3af;
+        }
+
+        .status-value {
+            color: #e0e0e0;
+            font-weight: 500;
+        }
+
+        .status-value.good { color: #4ade80; }
+        .status-value.warning { color: #fbbf24; }
+        .status-value.critical { color: #ef4444; }
+
+        /* Mode Buttons */
+        .mode-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 5px;
+        }
+
+        .mode-btn {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 1px solid #334155;
+            color: #e0e0e0;
+            padding: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 13px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .mode-btn:hover {
+            background: linear-gradient(135deg, #2d3a52 0%, #1a2438 100%);
+            border-color: #4a9eff;
+            transform: translateX(4px);
+        }
+
+        .mode-btn.active {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            border-color: #60a5fa;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+        }
+
+        .mode-btn.attack { border-left: 3px solid #ef4444; }
+        .mode-btn.follow { border-left: 3px solid #fbbf24; }
+        .mode-btn.survey { border-left: 3px solid #4ade80; }
+
+        /* Main Content Area - Map & Video Split */
+        .main-content {
+            display: grid;
+            grid-template-rows: 1fr 1fr;
+            gap: 2px;
+            background: #0a0e27;
+        }
+
+        .map-container, .video-container {
+            position: relative;
+            background: #1a1f3a;
+            overflow: hidden;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        .video-wrapper {
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        #video-feed {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .video-placeholder {
+            color: #6b7280;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        /* HUD Overlay for Video */
+        .hud-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            border: 2px solid #4a9eff;
+        }
+
+        .hud-corners {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border: 2px solid #4a9eff;
+        }
+
+        .hud-corners.tl { top: 10px; left: 10px; border-right: none; border-bottom: none; }
+        .hud-corners.tr { top: 10px; right: 10px; border-left: none; border-bottom: none; }
+        .hud-corners.bl { bottom: 10px; left: 10px; border-right: none; border-top: none; }
+        .hud-corners.br { bottom: 10px; right: 10px; border-left: none; border-top: none; }
+
+        .hud-info {
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10, 14, 39, 0.8);
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+            color: #4ade80;
+            border: 1px solid #4ade80;
+        }
+
+        .crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+        }
+
+        .crosshair::before, .crosshair::after {
+            content: '';
+            position: absolute;
+            background: #ef4444;
+        }
+
+        .crosshair::before {
+            width: 2px;
+            height: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .crosshair::after {
+            width: 100%;
+            height: 2px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        /* Right Sidebar - Tracking */
+        .right-sidebar {
+            background: #151933;
+            border-left: 1px solid #2a3f5f;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .tracking-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .tracking-item {
+            background: #1a1f3a;
+            margin: 10px;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #2a3f5f;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .tracking-item:hover {
+            border-color: #4a9eff;
+            background: #1f2640;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(74, 158, 255, 0.2);
+        }
+
+        .tracking-item.selected {
+            border-color: #4ade80;
+            background: #1f2640;
+        }
+
+        .tracking-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .tracking-id {
+            font-size: 16px;
+            font-weight: 600;
+            color: #e0e0e0;
+        }
+
+        .tracking-type {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .tracking-type.person {
+            background: #3b82f6;
+            color: #fff;
+        }
+
+        .tracking-type.vehicle {
+            background: #f59e0b;
+            color: #fff;
+        }
+
+        .tracking-detail {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            font-size: 12px;
+            color: #9ca3af;
+        }
+
+        .threat-level {
+            margin-top: 10px;
+            padding: 8px;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .threat-level.low {
+            background: rgba(74, 222, 128, 0.2);
+            color: #4ade80;
+            border: 1px solid #4ade80;
+        }
+
+        .threat-level.medium {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+            border: 1px solid #fbbf24;
+        }
+
+        .threat-level.high {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+            border: 1px solid #ef4444;
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0a0e27;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #2a3f5f;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #3a5f8f;
+        }
+
+        /* Section Labels */
+        .section-label {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(10, 14, 39, 0.9);
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #4a9eff;
+            border: 1px solid #2a3f5f;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>D.E.A.T.H. System</h1>
+            <div class="header-status">
+                <div class="status-indicator">
+                    <div class="status-dot"></div>
+                    <span>System Active</span>
+                </div>
+                <div class="status-indicator">
+                    <span id="current-time">--:--:--</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Left Sidebar: Status & Mode -->
+        <div class="left-sidebar">
+            <!-- Drone Status Panel -->
+            <div class="panel">
+                <div class="panel-title">Drone Status</div>
+                <div class="status-item">
+                    <span class="status-label">Status</span>
+                    <span class="status-value good" id="drone-status">ONLINE</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Active Drones</span>
+                    <span class="status-value" id="drones-live">3</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Distance</span>
+                    <span class="status-value" id="distance">245m</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Battery</span>
+                    <span class="status-value good" id="battery">87%</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Altitude</span>
+                    <span class="status-value" id="altitude">45m</span>
+                </div>
+            </div>
+
+            <!-- Mode Panel -->
+            <div class="panel">
+                <div class="panel-title">Operation Mode</div>
+                <div class="mode-buttons">
+                    <button class="mode-btn attack" onclick="setMode('attack')">⚡ Attack</button>
+                    <button class="mode-btn follow active" onclick="setMode('follow')">👁️ Follow</button>
+                    <button class="mode-btn survey" onclick="setMode('survey')">🗺️ Survey</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content: Map & Video -->
+        <div class="main-content">
+            <!-- Map Container -->
+            <div class="map-container">
+                <div class="section-label">Tactical Map</div>
+                <div id="map"></div>
+            </div>
+
+            <!-- Video Feed Container -->
+            <div class="video-container">
+                <div class="section-label">Live Feed</div>
+                <div class="video-wrapper">
+                    <!-- Replace src with your RTSP stream URL converted to HTTP/WebRTC -->
+                    <!-- <video id="video-feed" autoplay muted>
+                        <source src="YOUR_RTSP_STREAM_URL" type="video/mp4">
+                    </video> -->
+                    <div class="video-placeholder">
+                        <p>📹 RTSP Feed Awaiting Connection</p>
+                        <p style="font-size: 12px; margin-top: 10px; color: #4a9eff;">rtsp://stream.url.here</p>
+                    </div>
+                    
+                    <!-- HUD Overlay -->
+                    <div class="hud-overlay">
+                        <div class="hud-corners tl"></div>
+                        <div class="hud-corners tr"></div>
+                        <div class="hud-corners bl"></div>
+                        <div class="hud-corners br"></div>
+                        <div class="hud-info">DRONE-01 | ALT: 45m | HDG: 285°</div>
+                        <div class="crosshair"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Sidebar: Tracking -->
+        <div class="right-sidebar">
+            <div class="panel">
+                <div class="panel-title">Person & Object Tracking</div>
+            </div>
+            <div class="tracking-list">
+                <!-- Tracked Object 1 -->
+                <div class="tracking-item selected">
+                    <div class="tracking-header">
+                        <span class="tracking-id">TARGET-001</span>
+                        <span class="tracking-type person">Person</span>
+                    </div>
+                    <div class="tracking-detail">
+                        <span>Distance</span>
+                        <span>127m</span>
+                    </div>
+                    <div class="tracking-detail">
+                        <span>Velocity</span>
+                        <span>1.2 m/s</span>
+                    </div>
+                    <div class="tracking-detail">
+                        <span>Last Seen</span>
+                        <span>2s ago</span>
+                    </div>
+                    <div class="threat-level low">Threat: Low</div>
+                </div>
+
+                <!-- Tracked Object 2 -->
+                <div class="tracking-item">
+                    <div class="tracking-header">
+                        <span class="tracking-id">TARGET-002</span>
+                        <span class="tracking-type vehicle">Vehicle</span>
+                    </div>
+                    <div class="tracking-detail">
+                        <span>Distance</span>
+                        <span>340m</span>
+                    </div>
+                    <div class="tracking-detail">
+                        <span>Velocity</span>
+                        <span>8.5 m/s</span>
+                    </div>
+                    <div class="tracking-detail">
+                        <span>Last Seen</span>
+                        <span>1s ago</span>
+                    </div>
+                    <div class="threat-level medium">Threat: Medium</div>
+                </div>
+
+                <!-- Tracked Object 3 -->
+                <div class="tracking-item">
+                    <div class="tracking-header">
+                        <span class="tracking-id">TARGET-003</span>
+                        <span class="tracking-type person">Person</span>
+                    </div>
+                    <div class="tracking-detail">
+                        <span>Distance</span>
+                        <span>89m</span>
+                    </div>
+                    <div class="tracking-detail">
+                        <span>Velocity</span>
+                        <span>0.0 m/s</span>
+                    </div>
+                    <div class="tracking-detail">
+                        <span>Last Seen</span>
+                        <span>5s ago</span>
+                    </div>
+                    <div class="threat-level high">Threat: High</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Initialize map
+        const map = L.map('map', {
+            zoomControl: false
+        }).setView([43.4643, -80.5204], 13); // Waterloo, ON coordinates
+
+        // Dark theme tile layer
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '© OpenStreetMap contributors © CARTO',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Add zoom control to bottom right
+        L.control.zoom({
+            position: 'bottomright'
+        }).addTo(map);
+
+        // Example: Add drone marker
+        const droneIcon = L.divIcon({
+            className: 'drone-marker',
+            html: '<div style="background: #4a9eff; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 10px #4a9eff;"></div>',
+            iconSize: [16, 16]
+        });
+
+        const droneMarker = L.marker([43.4643, -80.5204], { icon: droneIcon }).addTo(map);
+
+        // Example: Add polyline for tracked path
+        const trackPath = L.polyline([
+            [43.4643, -80.5204],
+            [43.4653, -80.5214],
+            [43.4663, -80.5224]
+        ], {
+            color: '#fbbf24',
+            weight: 3,
+            opacity: 0.7,
+            dashArray: '5, 10'
+        }).addTo(map);
+
+        // Mode switching
+        function setMode(mode) {
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            console.log('Mode set to:', mode);
+        }
+
+        // Update time
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('current-time').textContent = now.toLocaleTimeString('en-US', { hour12: false });
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // Tracking item selection
+        document.querySelectorAll('.tracking-item').forEach(item => {
+            item.addEventListener('click', function() {
+                document.querySelectorAll('.tracking-item').forEach(i => i.classList.remove('selected'));
+                this.classList.add('selected');
+            });
+        });
+
+        // Simulate battery drain
+        setInterval(() => {
+            const batteryEl = document.getElementById('battery');
+            let battery = parseInt(batteryEl.textContent);
+            if (battery > 0) {
+                battery -= 1;
+                batteryEl.textContent = battery + '%';
+                
+                if (battery < 20) {
+                    batteryEl.classList.remove('good', 'warning');
+                    batteryEl.classList.add('critical');
+                } else if (battery < 50) {
+                    batteryEl.classList.remove('good', 'critical');
+                    batteryEl.classList.add('warning');
+                }
+            }
+        }, 5000);
+    </script>
+</body>
+</html>
