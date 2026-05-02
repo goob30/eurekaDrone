@@ -2,8 +2,9 @@ from PyQt5.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QLineEdit
 )
-from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEnginePage
 from PyQt5.QtCore import QUrl
+from PyQt5.QtCore import QTimer
 import sys
 import serialpy
 
@@ -20,14 +21,20 @@ drone_lat = 0.0
 drone_long = 0.0
 
 # left panel - drone modes etc
-left_panel = QVBoxLayout()
+left_widget = QWidget()
+left_widget.setFixedWidth(250)
+left_panel = QVBoxLayout(left_widget)
 connection_label = QLabel("Connection IS FUCKED")
 speed_label = QLabel("Speed IS FUCKED")
-lat_label = QLabel("Lat {}")
+lat_label = QLabel(f"Lat {drone_lat}")
+long_label = QLabel(f"Long {drone_long}")
 com_label = QLabel("COM")
 com_input = QLineEdit()
 com_input.setPlaceholderText("e.g. COM5")
 connect_button = QPushButton("Connect serial")
+
+for label in [connection_label, speed_label, lat_label, long_label]:
+    label.setWordWrap(True)
 
 def connect_serial():
     com_port = com_input.text().strip()
@@ -46,13 +53,16 @@ connect_button.clicked.connect(connect_serial)
 left_panel.addWidget(connection_label)
 left_panel.addWidget(speed_label)
 left_panel.addWidget(lat_label)
+left_panel.addWidget(long_label)
 left_panel.addWidget(com_label)
 left_panel.addWidget(com_input)
 left_panel.addWidget(connect_button)
 left_panel.addStretch()
 
 # center panel - map and cam feed
-center_panel = QVBoxLayout()
+center_widget = QWidget()
+center_widget.setFixedWidth(700)
+center_panel = QVBoxLayout(center_widget)
 
 # map with scroll zoom
 map_view = QWebEngineView()
@@ -99,12 +109,67 @@ map_html = """
         map.options.scrollWheelZoom = 'center';
         map.options.wheelDebounceTime = 40;
         map.options.wheelPxPerZoomLevel = 120;
+
+        window.currentLocation = null;
+        var userMarker = null;
+
+        function setUserLocation(lat, lng) {
+            window.currentLocation = {lat: lat, lng: lng};
+            if (userMarker) {
+                map.removeLayer(userMarker);
+            }
+            userMarker = L.marker([lat, lng]).addTo(map).bindPopup('Your location');
+            map.setView([lat, lng], 15);
+        }
+
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(
+                function(position) {
+                    setUserLocation(position.coords.latitude, position.coords.longitude);
+                },
+                function(error) {
+                    console.log('Geolocation failed:', error.message);
+                },
+                {enableHighAccuracy: true, timeout: 10000, maximumAge: 2000}
+            );
+        }
     </script>
 </body>
 </html>
 """
 
 map_view.setHtml(map_html)
+
+def handle_feature_permission_requested(security_origin, feature):
+    if feature == QWebEnginePage.Geolocation:
+        map_view.page().setFeaturePermission(
+            security_origin,
+            feature,
+            QWebEnginePage.PermissionGrantedByUser
+        )
+    else:
+        map_view.page().setFeaturePermission(
+            security_origin,
+            feature,
+            QWebEnginePage.PermissionDeniedByUser
+        )
+
+map_view.page().featurePermissionRequested.connect(handle_feature_permission_requested)
+
+def update_drone_location():
+    def handle_location(result):
+        global drone_lat, drone_long
+        if isinstance(result, dict) and "lat" in result and "lng" in result:
+            drone_lat = result["lat"]
+            drone_long = result["lng"]
+            lat_label.setText(f"Lat {drone_lat:.6f}")
+            long_label.setText(f"Long {drone_long:.6f}")
+
+    map_view.page().runJavaScript("window.currentLocation", handle_location)
+
+location_timer = QTimer()
+location_timer.timeout.connect(update_drone_location)
+location_timer.start(2000)
 
 # camera feed placeholder
 cam_view = QWebEngineView()
@@ -119,15 +184,18 @@ center_panel.addWidget(map_view)
 center_panel.addWidget(cam_view)
 
 # right panel target list and positions
-right_panel = QVBoxLayout()
+right_widget = QWidget()
+right_widget.setFixedWidth(250)
+right_panel = QVBoxLayout(right_widget)
 target_label = QLabel("Target List Area")
+target_label.setWordWrap(True)
 
 right_panel.addWidget(target_label)
 right_panel.addStretch()
 
-main_layout.addLayout(left_panel, 1)
-main_layout.addLayout(center_panel, 4)
-main_layout.addLayout(right_panel, 1)
+main_layout.addWidget(left_widget)
+main_layout.addWidget(center_widget)
+main_layout.addWidget(right_widget)
 
 window.show()
 sys.exit(app.exec_())
