@@ -1,26 +1,78 @@
 <!-- map.html -->
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-  <meta charset="utf-8" />
-  <title>OSM Map</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <style>
-    html, body, #map {
-      height: 100%;
-      margin: 0;
-    }
-  </style>
-</head>
-<body>
-  <div id="map"></div>
-  <script>
-    var map = L.map('map').setView([43.47, -80.54], 13); // Waterloo area
+    <head>
+        <meta charset="utf-8" />
+        <title>OSM Map</title>
+        <link
+            rel="stylesheet"
+            href="https://unpkg.com/leaflet/dist/leaflet.css"
+        />
+        <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+        <style>
+            html,
+            body,
+            #map {
+                height: 100%;
+                margin: 0;
+            }
+            .user-marker {
+                background: #4ade80;
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                border: 2px solid #fff;
+                box-shadow: 0 0 10px #4ade80;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="map"></div>
+        <script>
+            var map = L.map("map").setView([43.47, -80.54], 13); // Default view
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-  </script>
-</body>
+            L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                attribution: "&copy; OpenStreetMap contributors",
+            }).addTo(map);
+
+            function onLocationFound(e) {
+                var radius = e.accuracy / 2;
+
+                const userIcon = L.divIcon({
+                    className: "user-marker",
+                    iconSize: [16, 16],
+                });
+
+                L.marker(e.latlng, { icon: userIcon })
+                    .addTo(map)
+                    .bindPopup(
+                        "You are within " + radius + " meters from this point",
+                    )
+                    .openPopup();
+
+                L.circle(e.latlng, radius).addTo(map);
+
+                // Notify parent window of location update
+                if (window.parent) {
+                    window.parent.postMessage(
+                        {
+                            type: "LOCATION_UPDATE",
+                            lat: e.latlng.lat,
+                            lng: e.latlng.lng,
+                        },
+                        "*",
+                    );
+                }
+            }
+
+            function onLocationError(e) {
+                console.warn(e.message);
+            }
+
+            map.on("locationfound", onLocationFound);
+            map.on("locationerror", onLocationError);
+
+            map.locate({ setView: true, maxZoom: 16 });
+        </script>
+    </body>
 </html>

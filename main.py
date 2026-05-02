@@ -1,5 +1,10 @@
-﻿import os
+﻿import math
+import os
+import queue
+import re
+import subprocess
 import sys
+import threading
 
 import cv2
 import numpy as np
@@ -9,6 +14,7 @@ from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineView
 from PyQt5.QtWidgets import (
     QApplication,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -46,6 +52,94 @@ main_layout.setSpacing(10)
 drone_lat = 0.0
 drone_long = 0.0
 
+
+# Shared state for background updates
+telemetry_data = {"rssi": None, "distance": None}
+prediction_queue = queue.Queue(maxsize=1)
+prediction_results = {}
+
+
+def rssi_worker():
+    while True:
+        rssi = get_wifi_rssi()
+        dist = estimate_distance(rssi)
+        telemetry_data["rssi"] = rssi
+        telemetry_data["distance"] = dist
+        import time
+
+        time.sleep(2)  # Update telemetry every 2 seconds
+
+
+def prediction_worker():
+    while True:
+        try:
+            # Wait for a new frame to process
+            frame_data = prediction_queue.get()
+            if frame_data is None:
+                break
+
+            idx, face_roi, cache_key = frame_data
+
+            image = np.asarray(face_roi, dtype=np.float32).reshape(1, 224, 224, 3)
+            image = (image / 127.5) - 1
+            prediction = model.predict(image, verbose=0)[0]
+
+            index = int(np.argmax(prediction))
+            label_name = class_names[index] if index < len(class_names) else "Unknown"
+            confidence_score = float(prediction[index])
+            score_dwait = 0.0
+            score_jon = 0.0
+            if len(prediction) >= 2:
+                score_dwait = float(prediction[0])
+                score_jon = float(prediction[1])
+
+            prediction_results[cache_key] = (
+                label_name,
+                confidence_score,
+                score_dwait,
+                score_jon,
+            )
+        except Exception as e:
+            print(f"Prediction worker error: {e}")
+
+
+# Start background threads
+threading.Thread(target=rssi_worker, daemon=True).start()
+threading.Thread(target=prediction_worker, daemon=True).start()
+
+
+def get_wifi_rssi():
+    try:
+        # On macOS, system_profiler can provide the signal level
+        out = subprocess.check_output(
+            ["system_profiler", "SPAirPortDataType"], stderr=subprocess.STDOUT
+        )
+        # Search for Signal / Noise: -34 dBm / -96 dBm
+        match = re.search(r"Signal / Noise: (-\d+)", out.decode())
+        if match:
+            return int(match.group(1))
+    except Exception:
+        pass
+    return None
+
+
+def estimate_distance(rssi):
+    if rssi is None:
+        return None
+    # Friis transmission equation simplified: RSSI = -10 * n * log10(d) + A
+    # A is RSSI at 1 meter (usually -30 to -50)
+    # n is path loss exponent (2 for free space, 3-4 for indoor/obstructed)
+    try:
+        reference_rssi = (
+            -35
+        )  # Typical RSSI at 1 meter for this device based on previous measurement
+        path_loss_exponent = 2.5  # Environment factor
+        distance = 10 ** ((reference_rssi - rssi) / (10 * path_loss_exponent))
+        return round(distance, 2)
+    except Exception:
+        return None
+
+
 np.set_printoptions(suppress=True)
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -82,10 +176,38 @@ left_widget.setObjectName("sidePanel")
 left_panel = QVBoxLayout(left_widget)
 left_panel.setContentsMargins(16, 16, 16, 16)
 left_panel.setSpacing(10)
-connection_label = QLabel("Connection IS FUCKED")
-speed_label = QLabel("Speed IS FUCKED")
+
+
+def create_header(text):
+    lbl = QLabel(text)
+    lbl.setStyleSheet("""
+        QLabel {
+            color: #4a9eff;
+            font-size: 10px;
+            font-weight: bold;
+            letter-spacing: 2.5px;
+            margin-top: 12px;
+            border-bottom: 1px solid #32323d;
+            padding-bottom: 4px;
+        }
+    """)
+    return lbl
+
+
+telemetry_header = create_header("TELEMETRY")
+connection_label = QLabel("Connection OFFLINE")
+connection_label.setStyleSheet("color: #dc2626;")  # Red when "OFFLINE"
+rssi_label = QLabel("RSSI: -- dBm")
+dist_label = QLabel("Est. Distance: -- m")
+line = QFrame()
+line.setFrameShape(QFrame.HLine)
+line.setFrameShadow(QFrame.Sunken)
+
+
+speed_label = QLabel("Speed OFFLINE")
 lat_label = QLabel(f"Lat {drone_lat}")
 long_label = QLabel(f"Long {drone_long}")
+connection_header = create_header("CONNECTION")
 com_label = QLabel("COM")
 com_label.setObjectName("fieldLabel")
 com_input = QLineEdit()
@@ -109,16 +231,22 @@ for button in [left_button, center_button, right_button]:
     button.setAutoRepeat(False)
     button.setEnabled(False)
 
-for label in [connection_label, speed_label, lat_label, long_label]:
+for label in [
+    connection_label,
+    rssi_label,
+    dist_label,
+    speed_label,
+    lat_label,
+    long_label,
+]:
     label.setWordWrap(True)
 
 
 def connect_serial():
     com_port = com_input.text().strip()
-    if not com_port:
+    if not com_port or com_port == "":
         connection_label.setText("Enter a COM port first")
         return
-
     try:
         connected_port = serialpy.connect(com_port)
         connection_label.setText(f"Connected: {connected_port}")
@@ -143,10 +271,15 @@ left_button.clicked.connect(lambda: send_servo_command("LEFT", serialpy.left))
 center_button.clicked.connect(lambda: send_servo_command("CENTER", serialpy.center))
 right_button.clicked.connect(lambda: send_servo_command("RIGHT", serialpy.right))
 
-left_panel.addWidget(connection_label)
+left_panel.addWidget(telemetry_header)
+left_panel.addWidget(rssi_label)
+left_panel.addWidget(dist_label)
 left_panel.addWidget(speed_label)
 left_panel.addWidget(lat_label)
 left_panel.addWidget(long_label)
+
+left_panel.addWidget(connection_header)
+left_panel.addWidget(connection_label)
 left_panel.addWidget(com_label)
 left_panel.addWidget(com_input)
 left_panel.addWidget(connect_button)
@@ -365,7 +498,7 @@ def camera_click_handler(event):
 cam_view = ClickableCameraLabel(camera_click_handler)
 cam_view.setAlignment(Qt.AlignCenter)
 cam_view.setStyleSheet(
-    "background-color: #000; color: #6b7280; border: 1px solid #2a3f5f;"
+    "background-color: #1a1a20; color: #6b7280; border: 1px solid #32323d;"
 )
 
 center_panel.addWidget(map_view)
@@ -374,6 +507,17 @@ center_panel.addWidget(cam_view)
 
 def update_camera_feed():
     global detected_faces, last_frame_shape, last_render_rect, frame_counter
+
+    # Update UI from shared telemetry data (no blocking shell calls here)
+    rssi = telemetry_data["rssi"]
+    dist = telemetry_data["distance"]
+    if rssi is not None:
+        rssi_label.setText(f"RSSI: {rssi} dBm")
+        if dist is not None:
+            dist_label.setText(f"Est. Distance: {dist} m")
+    else:
+        rssi_label.setText("RSSI: N/A")
+        dist_label.setText("Est. Distance: N/A")
 
     if camera is None or not camera.isOpened():
         cam_view.setText("Webcam not available")
@@ -403,30 +547,17 @@ def update_camera_feed():
         score_jon = 0.0
 
         cache_key = f"face_{idx}"
-        cached = last_predictions.get(cache_key)
+        cached = prediction_results.get(cache_key)
 
-        # Run model every 3rd frame to reduce native backend stress.
-        if (
-            model is not None
-            and class_names
-            and (frame_counter % 3 == 0 or cached is None)
-        ):
-            image = np.asarray(model_input, dtype=np.float32).reshape(1, 224, 224, 3)
-            image = (image / 127.5) - 1
-            prediction = model.predict(image, verbose=0)[0]
-            index = int(np.argmax(prediction))
-            label_name = class_names[index] if index < len(class_names) else "Unknown"
-            confidence_score = float(prediction[index])
-            if len(prediction) >= 2:
-                score_dwait = float(prediction[0])
-                score_jon = float(prediction[1])
-            last_predictions[cache_key] = (
-                label_name,
-                confidence_score,
-                score_dwait,
-                score_jon,
-            )
-        elif cached is not None:
+        # Offload prediction to background worker if not busy
+        if model is not None and class_names:
+            try:
+                # Try to put frame in queue without blocking
+                prediction_queue.put_nowait((idx, model_input, cache_key))
+            except queue.Full:
+                pass  # Already processing a frame
+
+        if cached is not None:
             label_name, confidence_score, score_dwait, score_jon = cached
 
         detected_faces.append(
@@ -543,72 +674,58 @@ main_layout.addWidget(right_widget)
 
 app.setStyleSheet("""
 QWidget#root {
-    background-color: #0a0e27;
-    color: #e0e0e0;
+    background-color: #1e1e24;
+    color: #e2e2e7;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     font-size: 13px;
 }
-QWidget#sidePanel {
-    background-color: #151933;
-    border: 1px solid #2a3f5f;
-    border-radius: 8px;
+
+QWidget#sidePanel, QWidget#centerPanel, QWidget#rightPanel {
+    background-color: #25252d;
+    border: 1px solid #32323d;
 }
-QWidget#centerPanel {
-    background-color: #0f1228;
-    border: 1px solid #2a3f5f;
-    border-radius: 8px;
-}
+
 QLabel {
-    color: #cfd8e3;
+    color: #aeb0b7;
 }
+
 QLabel#fieldLabel {
-    color: #8fa1ba;
-    font-size: 11px;
-    font-weight: 600;
+    font-weight: bold;
+    color: #d1d1d6;
 }
+
 QLineEdit {
-    background-color: #0f172a;
-    color: #e0e0e0;
-    border: 1px solid #334155;
+    background-color: #2c2c36;
+    border: 1px solid #3f3f4a;
     border-radius: 6px;
-    padding: 8px 10px;
-    min-height: 20px;
+    padding: 6px;
+    color: #ffffff;
 }
-QLineEdit:focus {
-    border: 1px solid #4a9eff;
-}
-QPushButton {
-    background-color: #1a223d;
-    color: #e0e0e0;
-    border: 1px solid #334155;
-    border-radius: 6px;
-    padding: 10px 12px;
-    min-height: 28px;
-    font-weight: 600;
-}
-QPushButton:hover {
-    background-color: #223055;
-    border-color: #4a9eff;
-}
-QPushButton:pressed {
-    background-color: #192644;
-}
-QPushButton:disabled {
-    background-color: #121a30;
-    color: #6b7280;
-    border-color: #24324a;
-}
+
 QPushButton#primaryButton {
-    background-color: #1f2e52;
-    border-color: #3f5e8d;
+    background-color: #32323d;
+    border: 1px solid #454552;
+    color: #e2e2e7;
+    padding: 8px;
+    border-radius: 6px;
+    font-weight: 500;
 }
+
 QPushButton#primaryButton:hover {
-    background-color: #27406f;
+    background-color: #3f3f4a;
     border-color: #4a9eff;
 }
+
 QPushButton#controlButton {
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
+    background-color: #2c2c36;
+    border: 1px solid #3f3f4a;
+    color: #e2e2e7;
+    padding: 8px;
+    border-radius: 6px;
+}
+
+QPushButton#controlButton:pressed {
+    background-color: #1e1e24;
 }
 """)
 
