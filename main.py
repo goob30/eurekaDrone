@@ -5,7 +5,7 @@ import re
 import subprocess
 import sys
 import threading
-
+# where is uhhe tensorflow
 import cv2
 import numpy as np
 from keras.models import load_model
@@ -103,7 +103,7 @@ def prediction_worker():
             print(f"Prediction worker error: {e}")
 
 
-# Start background threads
+# start background threads
 threading.Thread(target=rssi_worker, daemon=True).start()
 threading.Thread(target=prediction_worker, daemon=True).start()
 
@@ -170,7 +170,7 @@ frame_counter = 0
 last_predictions = {}
 active_target_id = None
 
-# left panel - drone modes etc
+# left panel drone modes etc
 left_widget = QWidget()
 left_widget.setFixedWidth(250)
 left_widget.setObjectName("sidePanel")
@@ -196,10 +196,10 @@ def create_header(text):
 
 
 telemetry_header = create_header("TELEMETRY")
-connection_label = QLabel("Connection: COM9") #VALUES DEMO-----------------------------------------
-connection_label.setStyleSheet("color: #00FF00;")  # Red when "OFFLINE"
-rssi_label = QLabel("RSSI: -35 dBm")
-dist_label = QLabel("Est. Distance: 2 m") # TO HERE------------------------------------------------
+connection_label = QLabel("Connection OFFLINE")
+connection_label.setStyleSheet("color: #dc2626;")  # dude i forgot to make it green
+rssi_label = QLabel("RSSI: -- dBm")
+dist_label = QLabel("Est. Distance: -- m")
 line = QFrame()
 line.setFrameShape(QFrame.HLine)
 line.setFrameShadow(QFrame.Sunken)
@@ -519,7 +519,7 @@ center_panel.addWidget(cam_view)
 def update_camera_feed():
     global detected_faces, last_frame_shape, last_render_rect, frame_counter, active_target_id
 
-    # Update UI from shared telemetry data (no blocking shell calls here)
+    # Update UI from shared telemetry data (ui thread was blocked by osd)
     rssi = telemetry_data["rssi"]
     dist = telemetry_data["distance"]
     if rssi is not None:
@@ -563,10 +563,10 @@ def update_camera_feed():
         # Offload prediction to background worker if not busy
         if model is not None and class_names:
             try:
-                # Try to put frame in queue without blocking
+                # Try to put frame in queue without blocking 
                 prediction_queue.put_nowait((idx, model_input, cache_key))
             except queue.Full:
-                pass  # Already processing a frame
+                pass  # ALreadt processing a frame
 
         if cached is not None:
             label_name, confidence_score, score_dwait, score_jon = cached
