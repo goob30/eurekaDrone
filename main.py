@@ -15,10 +15,14 @@ window.setGeometry(100, 100, 1200, 700)
 
 main_layout = QHBoxLayout(window)
 
+drone_lat = 0.0
+drone_long = 0.0
+
 # left panel - drone modes etc
 left_panel = QVBoxLayout()
 connection_label = QLabel("Connection IS FUCKED")
 speed_label = QLabel("Speed IS FUCKED")
+lat_label = QLabel("Lat {}")
 
 left_panel.addWidget(connection_label)
 left_panel.addWidget(speed_label)
