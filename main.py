@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QHBoxLayout, QVBoxLayout,
-    QLabel, QPushButton
+    QLabel, QPushButton, QLineEdit
 )
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtCore import QUrl
@@ -24,9 +24,31 @@ left_panel = QVBoxLayout()
 connection_label = QLabel("Connection IS FUCKED")
 speed_label = QLabel("Speed IS FUCKED")
 lat_label = QLabel("Lat {}")
+com_label = QLabel("COM")
+com_input = QLineEdit()
+com_input.setPlaceholderText("e.g. COM5")
+connect_button = QPushButton("Connect serial")
+
+def connect_serial():
+    com_port = com_input.text().strip()
+    if not com_port:
+        connection_label.setText("Enter a COM port first")
+        return
+
+    try:
+        serialpy.connect(com_port)
+        connection_label.setText(f"Connected: {com_port}")
+    except Exception as e:
+        connection_label.setText(f"Connection failed: {e}")
+
+connect_button.clicked.connect(connect_serial)
 
 left_panel.addWidget(connection_label)
 left_panel.addWidget(speed_label)
+left_panel.addWidget(lat_label)
+left_panel.addWidget(com_label)
+left_panel.addWidget(com_input)
+left_panel.addWidget(connect_button)
 left_panel.addStretch()
 
 # center panel - map and cam feed
