@@ -196,10 +196,10 @@ def create_header(text):
 
 
 telemetry_header = create_header("TELEMETRY")
-connection_label = QLabel("Connection OFFLINE")
-connection_label.setStyleSheet("color: #dc2626;")  # Red when "OFFLINE"
-rssi_label = QLabel("RSSI: -- dBm")
-dist_label = QLabel("Est. Distance: -- m")
+connection_label = QLabel("Connection: COM9") #VALUES DEMO-----------------------------------------
+connection_label.setStyleSheet("color: #00FF00;")  # Red when "OFFLINE"
+rssi_label = QLabel("RSSI: -35 dBm")
+dist_label = QLabel("Est. Distance: 2 m") # TO HERE------------------------------------------------
 line = QFrame()
 line.setFrameShape(QFrame.HLine)
 line.setFrameShadow(QFrame.Sunken)
@@ -262,7 +262,7 @@ def send_servo_command(action_name, action_fn):
 
 
 connect_button.clicked.connect(connect_serial)
-sweep_button.clicked.connect(lambda: send_servo_command("SWEEP", serialpy.send("SWEEP")))
+sweep_button.clicked.connect(lambda: send_servo_command("SWEEP", lambda: serialpy.send("SWEEP")))
 
 left_panel.addWidget(telemetry_header)
 left_panel.addWidget(rssi_label)
