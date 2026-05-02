@@ -57,6 +57,10 @@ def center():
     send('CENTER')
 
 
+def sweep():
+    send('SWEEP')
+
+
 def close():
     global ser, _last_cmd, _last_sent_ts
     if is_connected():

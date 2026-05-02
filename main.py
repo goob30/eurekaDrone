@@ -216,19 +216,13 @@ com_input.setPlaceholderText("e.g. COM5")
 connect_button = QPushButton("Connect serial")
 connect_button.setObjectName("primaryButton")
 
-# 1-row directional controls
+# Single command control
 controls_row = QHBoxLayout()
-left_button = QPushButton("Left")
-center_button = QPushButton("Center")
-right_button = QPushButton("Right")
-left_button.setObjectName("controlButton")
-center_button.setObjectName("controlButton")
-right_button.setObjectName("controlButton")
-controls_row.addWidget(left_button)
-controls_row.addWidget(center_button)
-controls_row.addWidget(right_button)
+sweep_button = QPushButton("Sweep")
+sweep_button.setObjectName("controlButton")
+controls_row.addWidget(sweep_button)
 controls_row.setSpacing(8)
-for button in [left_button, center_button, right_button]:
+for button in [sweep_button]:
     button.setAutoRepeat(False)
     button.setEnabled(False)
 
@@ -251,11 +245,11 @@ def connect_serial():
     try:
         connected_port = serialpy.connect(com_port)
         connection_label.setText(f"Connected: {connected_port}")
-        for button in [left_button, center_button, right_button]:
+        for button in [sweep_button]:
             button.setEnabled(True)
     except Exception as e:
         connection_label.setText(f"Connection failed: {e}")
-        for button in [left_button, center_button, right_button]:
+        for button in [sweep_button]:
             button.setEnabled(False)
 
 
@@ -268,9 +262,7 @@ def send_servo_command(action_name, action_fn):
 
 
 connect_button.clicked.connect(connect_serial)
-left_button.clicked.connect(lambda: send_servo_command("LEFT", serialpy.left))
-center_button.clicked.connect(lambda: send_servo_command("CENTER", serialpy.center))
-right_button.clicked.connect(lambda: send_servo_command("RIGHT", serialpy.right))
+sweep_button.clicked.connect(lambda: send_servo_command("SWEEP", serialpy.send("SWEEP")))
 
 left_panel.addWidget(telemetry_header)
 left_panel.addWidget(rssi_label)
@@ -509,19 +501,8 @@ def get_requested_target_id():
 
 
 def drive_serial_to_target(target):
-    if last_frame_shape is None:
-        return
-    frame_width = last_frame_shape[1]
-    tx, _ = target["center"]
-    center_x = frame_width // 2
-    deadband = max(30, frame_width // 12)
-    delta = tx - center_x
-    if abs(delta) <= deadband:
-        send_servo_command("TRACK-CENTER", serialpy.center)
-    elif delta < 0:
-        send_servo_command("TRACK-LEFT", serialpy.left)
-    else:
-        send_servo_command("TRACK-RIGHT", serialpy.right)
+    _ = target
+    send_servo_command("SWEEP", serialpy.sweep)
 
 
 # camera feed
