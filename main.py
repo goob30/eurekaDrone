@@ -168,6 +168,7 @@ last_frame_shape = None
 last_render_rect = None
 frame_counter = 0
 last_predictions = {}
+active_target_id = None
 
 # left panel - drone modes etc
 left_widget = QWidget()
@@ -409,6 +410,10 @@ right_panel.setContentsMargins(16, 16, 16, 16)
 right_panel.setSpacing(10)
 target_label = QLabel("Target List Area (click face to add)")
 target_label.setWordWrap(True)
+track_label = QLabel("Track target ID")
+track_label.setObjectName("fieldLabel")
+track_input = QLineEdit()
+track_input.setPlaceholderText("e.g. TARGET-001")
 
 target_list_widget = QWidget()
 target_list_layout = QVBoxLayout(target_list_widget)
@@ -416,6 +421,8 @@ target_list_layout.setContentsMargins(0, 0, 0, 0)
 target_list_layout.setSpacing(8)
 
 right_panel.addWidget(target_label)
+right_panel.addWidget(track_label)
+right_panel.addWidget(track_input)
 right_panel.addWidget(target_list_widget)
 right_panel.addStretch()
 
@@ -491,7 +498,30 @@ def camera_click_handler(event):
         "confidence": clicked_face["confidence"],
         "last_seen": 0,
     }
+    if not track_input.text().strip():
+        track_input.setText(target_id)
     refresh_target_panel()
+
+
+def get_requested_target_id():
+    target_id = track_input.text().strip().upper()
+    return target_id if target_id else None
+
+
+def drive_serial_to_target(target):
+    if last_frame_shape is None:
+        return
+    frame_width = last_frame_shape[1]
+    tx, _ = target["center"]
+    center_x = frame_width // 2
+    deadband = max(30, frame_width // 12)
+    delta = tx - center_x
+    if abs(delta) <= deadband:
+        send_servo_command("TRACK-CENTER", serialpy.center)
+    elif delta < 0:
+        send_servo_command("TRACK-LEFT", serialpy.left)
+    else:
+        send_servo_command("TRACK-RIGHT", serialpy.right)
 
 
 # camera feed
@@ -506,7 +536,7 @@ center_panel.addWidget(cam_view)
 
 
 def update_camera_feed():
-    global detected_faces, last_frame_shape, last_render_rect, frame_counter
+    global detected_faces, last_frame_shape, last_render_rect, frame_counter, active_target_id
 
     # Update UI from shared telemetry data (no blocking shell calls here)
     rssi = telemetry_data["rssi"]
@@ -647,6 +677,32 @@ def update_camera_feed():
             target["last_seen"] = 0
         else:
             target["last_seen"] += 1
+
+    requested_target_id = get_requested_target_id()
+    active_target_id = None
+    if requested_target_id:
+        tracked = selected_targets.get(requested_target_id)
+        if tracked is not None and tracked["last_seen"] <= 6:
+            active_target_id = requested_target_id
+            drive_serial_to_target(tracked)
+        elif tracked is None:
+            connection_label.setText(f"Tracking target not found: {requested_target_id}")
+
+    for target_id, target in selected_targets.items():
+        x, y, w, h = target["bbox"]
+        color = (100, 220, 120) if target_id == active_target_id else (255, 200, 60)
+        thickness = 3 if target_id == active_target_id else 2
+        cv2.rectangle(frame, (x, y), (x + w, y + h), color, thickness)
+        cv2.putText(
+            frame,
+            target_id,
+            (x, max(16, y - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            color,
+            2,
+            cv2.LINE_AA,
+        )
 
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     h, w, ch = rgb.shape
